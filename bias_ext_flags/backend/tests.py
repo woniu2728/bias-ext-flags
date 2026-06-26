@@ -20,7 +20,7 @@ from bias_core.extensions.runtime import (
 )
 from bias_core.models import AuditLog, Setting
 from bias_core.settings_service import clear_runtime_setting_caches
-from extensions.testing import ExtensionRuntimeTestMixin, get_resource_registry
+from bias_core.testing import ExtensionRuntimeTestMixin, get_resource_registry
 from extensions.discussions.backend.visibility import scope_discussion_view, scope_post_view
 from bias_ext_flags.backend.models import PostFlag
 from bias_core.extensions.runtime import (
@@ -302,7 +302,7 @@ class FlagsExtensionTests(TestCase):
         }
 
         mocked_bus = Mock()
-        with patch("apps.core.domain_events.get_forum_event_bus", return_value=mocked_bus):
+        with patch("bias_core.domain_events.get_forum_event_bus", return_value=mocked_bus):
             with self.captureOnCommitCallbacks(execute=True) as callbacks:
                 response = self.client.post(
                     "/api/resources/flag/create",
@@ -459,7 +459,7 @@ class FlagsExtensionTests(TestCase):
             ),
         )
 
-        with patch("apps.core.extensions.runtime_models.get_runtime_model_service", return_value=app.models):
+        with patch("bias_core.extensions.runtime_models.get_runtime_model_service", return_value=app.models):
             visible_flag_ids = set(
                 scope_flag_visibility(
                     PostFlag.objects.filter(id__in=[allowed_flag.id, denied_flag.id]),
@@ -522,7 +522,7 @@ class FlagsExtensionTests(TestCase):
         )
 
         mocked_bus = Mock()
-        with patch("apps.core.domain_events.get_forum_event_bus", return_value=mocked_bus):
+        with patch("bias_core.domain_events.get_forum_event_bus", return_value=mocked_bus):
             with self.captureOnCommitCallbacks(execute=True) as callbacks:
                 response = self.client.delete(
                     f"/api/posts/{self.post.id}/flags",
@@ -558,7 +558,7 @@ class FlagsExtensionTests(TestCase):
         )
 
         mocked_bus = Mock()
-        with patch("apps.core.domain_events.get_forum_event_bus", return_value=mocked_bus):
+        with patch("bias_core.domain_events.get_forum_event_bus", return_value=mocked_bus):
             with self.captureOnCommitCallbacks(execute=True):
                 deleted = delete_runtime_post(self.post.id, self.admin)
 
@@ -783,7 +783,7 @@ class AdminFlagManagementApiTests(TestCase):
         self.assertEqual(audit_log.data["status"], "resolved")
 
     def test_admin_without_flag_permission_is_denied(self):
-        with patch("apps.core.extensions.platform.has_forum_permission", return_value=False):
+        with patch("bias_core.extensions.platform.has_forum_permission", return_value=False):
             list_response = self.client.get(
                 "/api/admin/flags",
                 **self.auth_header(),
@@ -800,5 +800,7 @@ class AdminFlagManagementApiTests(TestCase):
                 **self.auth_header(),
             )
             self.assertEqual(resolve_response.status_code, 403, resolve_response.content)
+
+
 
 
