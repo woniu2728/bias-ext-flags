@@ -75,7 +75,7 @@ import {
   useModalStore
 } from '@bias/core'
 import { getUiCopy
-} from '@bias/forum'
+} from '@bias/core/forum'
 
 const props = defineProps({
   post: {

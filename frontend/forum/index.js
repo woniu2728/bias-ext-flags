@@ -3,7 +3,7 @@ import {
 import {
   extendForum,
   getUiCopy
-} from '@bias/forum'
+} from '@bias/core/forum'
 import PostReportModal from './PostReportModal.vue'
 import {
   buildPostFlagPanel,
