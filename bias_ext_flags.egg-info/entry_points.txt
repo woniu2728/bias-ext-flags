@@ -1,2 +1,0 @@
-[bias.extensions]
-flags = bias_ext_flags.backend.ext:extend
