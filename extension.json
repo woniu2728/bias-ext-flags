@@ -20,5 +20,8 @@
   "extra": {
     "auto_install": true,
     "auto_enable": true
+  },
+  "security": {
+    "capabilities_notice": "Moderation reporting extension; stores user reports and exposes staff review actions for reported posts."
   }
 }
