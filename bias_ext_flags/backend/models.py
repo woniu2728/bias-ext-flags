@@ -16,7 +16,7 @@ class PostFlag(models.Model):
         (STATUS_IGNORED, "已忽略"),
     ]
 
-    post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="flags")
+    post = models.ForeignKey("content.Post", on_delete=models.CASCADE, related_name="flags")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_flags")
     reason = models.CharField(max_length=100)
     message = models.TextField(blank=True)
