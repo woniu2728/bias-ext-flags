@@ -93,6 +93,7 @@ def resolve_post_open_flag_count(post, context: dict) -> int:
     if cached is not None:
         return len(cached)
     if not resolve_forum_can_view_flags(None, context):
+        setattr(post, "open_flags_cache", [])
         return 0
     return PostFlag.objects.filter(post_id=post.id, status=PostFlag.STATUS_OPEN).count()
 
@@ -101,6 +102,9 @@ def resolve_post_flag_objects(post, context: dict):
     cached = getattr(post, "open_flags_cache", None)
     if cached is not None:
         return cached
+    if not resolve_forum_can_view_flags(None, context):
+        setattr(post, "open_flags_cache", [])
+        return []
     return PostFlag.objects.filter(
         post_id=post.id,
         status=PostFlag.STATUS_OPEN,
