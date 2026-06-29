@@ -6,7 +6,6 @@ from bias_core.extensions.platform import api_error
 from bias_core.extensions.platform import AccessTokenAuth
 from bias_core.extensions.platform import PaginationService
 from bias_core.extensions.platform import log_admin_action
-from bias_core.extensions.platform import require_forum_permission
 from bias_core.extensions.runtime import (
     get_runtime_post_flag_model,
     list_runtime_post_flags,
@@ -19,7 +18,14 @@ router = Router()
 
 
 def _require_admin_permission(request, permission_code: str, message: str):
-    return require_forum_permission(request, permission_code, message)
+    from bias_core.extensions import platform
+
+    denied = platform.require_staff(request)
+    if denied:
+        return denied
+    if not platform.has_forum_permission(request.auth, permission_code):
+        return platform.api_error(message, status=403, code="permission_denied")
+    return None
 
 
 @router.get("/flags", auth=AccessTokenAuth(), tags=["Admin"])

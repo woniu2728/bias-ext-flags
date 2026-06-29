@@ -2,8 +2,10 @@
 name = "bias-ext-flags"
 version = "0.1.0"
 dependencies = ["bias-core>=0.1,<0.2"]
+
 [project.entry-points."bias.extensions"]
 flags = "bias_ext_flags.backend.ext:extend"
+
 [tool.setuptools]
 include-package-data = true
 
@@ -13,6 +15,15 @@ include = ["bias_ext_flags*"]
 
 [tool.setuptools.data-files]
 "bias_extensions/flags" = ["extension.json"]
-"bias_extensions/flags/frontend/admin" = ["frontend/admin/FlagsPage.vue", "frontend/admin/flagsPageBootstrap.js", "frontend/admin/index.js"]
-"bias_extensions/flags/frontend/forum" = ["frontend/forum/flagRuntime.js", "frontend/forum/index.js", "frontend/forum/nodeSdk.js", "frontend/forum/PostReportModal.vue", "frontend/forum/sdk.js"]
-
+"bias_extensions/flags/frontend/admin" = [
+  "frontend/admin/FlagsPage.vue",
+  "frontend/admin/flagsPageBootstrap.js",
+  "frontend/admin/index.js",
+]
+"bias_extensions/flags/frontend/forum" = [
+  "frontend/forum/PostReportModal.vue",
+  "frontend/forum/flagRuntime.js",
+  "frontend/forum/index.js",
+  "frontend/forum/nodeSdk.js",
+  "frontend/forum/sdk.js",
+]

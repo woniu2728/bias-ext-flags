@@ -7,7 +7,9 @@
     "Bias"
   ],
   "dependencies": [
-    "core"
+    "core",
+    "users",
+    "content"
   ],
   "django": {
     "app_config": "bias_ext_flags.backend.apps.FlagsExtensionConfig",

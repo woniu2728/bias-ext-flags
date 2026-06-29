@@ -1,27 +1,39 @@
 import json
+import sys
 from datetime import timedelta
 from io import StringIO
-from unittest.mock import Mock, patch
+from types import ModuleType
+from unittest.mock import patch
 
+from django.test import override_settings
+from django.urls import clear_url_caches, path
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from ninja_jwt.tokens import RefreshToken
 
-from bias_core.forum_registry import (
-    get_registry_permission_codes_by_prefix,
-    get_registry_staff_managed_admin_permission_codes,
-)
-from bias_core.extensions.bootstrap import bootstrap_extension_host, reset_extension_application_bootstrap_state
+from bias_core.extensions.platform import apply_model_visibility_scope
 from bias_ext_flags.backend.events import PostFlagCreatedEvent, PostFlagsDeletedEvent
 from bias_core.extensions.runtime import (
     create_runtime_discussion,
     get_runtime_discussion_model,
 )
-from bias_core.models import AuditLog, Setting
-from bias_core.settings_service import clear_runtime_setting_caches
-from bias_core.testing import ExtensionRuntimeTestMixin, get_resource_registry
-from extensions.discussions.backend.visibility import scope_discussion_view, scope_post_view
+from bias_core.extensions.testing import (
+    AuditLog,
+    ExtensionApplication,
+    ExtensionRuntimeTestMixin,
+    Setting,
+    bootstrap_extension_host,
+    bootstrap_enabled_extension_application,
+    capture_runtime_events,
+    clear_runtime_setting_caches,
+    get_registry_permission_codes_by_prefix,
+    get_registry_staff_managed_admin_permission_codes,
+    get_resource_registry,
+    reset_extension_application_bootstrap_state,
+)
 from bias_ext_flags.backend.models import PostFlag
 from bias_core.extensions.runtime import (
     create_runtime_post,
@@ -47,6 +59,25 @@ class RuntimeModelProxy:
 User = RuntimeModelProxy(get_runtime_user_model)
 Group = RuntimeModelProxy(get_runtime_group_model)
 Permission = RuntimeModelProxy(get_runtime_permission_model)
+
+
+def allow_all_model_visibility(queryset, context):
+    return queryset
+
+
+def scope_test_post_view(queryset, context):
+    user = context.get("user")
+    nested_context = {key: value for key, value in context.items() if key != "ability"}
+    PostModel = queryset.model
+    visible_queryset = queryset.filter(is_private=False, hidden_at__isnull=True)
+    private_queryset = apply_model_visibility_scope(
+        PostModel,
+        queryset.filter(is_private=True),
+        user=user,
+        ability="viewPrivate",
+        context=nested_context,
+    )
+    return (visible_queryset | private_queryset).distinct()
 
 
 class FlagsPermissionRegistryTests(ExtensionRuntimeTestMixin, TestCase):
@@ -111,12 +142,12 @@ class FlagsExtensionDiagnosticsTests(ExtensionRuntimeTestMixin, TestCase):
         owned_item = audit["items"][0]
 
         self.assertEqual(extension["id"], "flags")
-        self.assertIn("0001_state_post_flag.py", extension["migration_plan"]["pending_files"])
+        self.assertEqual(extension["migration_plan"]["pending_files"], [])
         self.assertEqual(audit["extension_native_count"], 1)
         self.assertEqual(audit["app_label_migration_required_count"], 0)
         self.assertEqual(audit["app_label_migration_plan_required_count"], 0)
         self.assertTrue(all(item["storage_origin"] == "extension" for item in audit["items"]))
-        self.assertTrue(all(item["model_module"].startswith("extensions.flags") for item in audit["items"]))
+        self.assertTrue(all(item["model_module"].startswith("bias_ext_flags") for item in audit["items"]))
         self.assertEqual(audit["app_label_migration_items"], [])
         self.assertEqual(owned_item["current_app_label"], "flags")
         self.assertEqual(owned_item["target_app_label"], "flags")
@@ -126,6 +157,14 @@ class FlagsExtensionDiagnosticsTests(ExtensionRuntimeTestMixin, TestCase):
 class FlagsExtensionTests(TestCase):
     def setUp(self):
         clear_runtime_setting_caches()
+        self.extension_app = bootstrap_enabled_extension_application("flags")
+        self._urlconf_name = f"bias_ext_flags.tests_runtime_urls_{id(self)}"
+        self._urlconf_module = ModuleType(self._urlconf_name)
+        self._urlconf_module.urlpatterns = [path("api/", self.extension_app.make("api.application").urls)]
+        sys.modules[self._urlconf_name] = self._urlconf_module
+        self._override_root_urlconf = override_settings(ROOT_URLCONF=self._urlconf_name)
+        self._override_root_urlconf.enable()
+        clear_url_caches()
         self.author = User.objects.create_user(
             username="author",
             email="author@example.com",
@@ -155,7 +194,11 @@ class FlagsExtensionTests(TestCase):
         )
 
     def tearDown(self):
+        self._override_root_urlconf.disable()
+        clear_url_caches()
+        sys.modules.pop(self._urlconf_name, None)
         clear_runtime_setting_caches()
+        reset_extension_application_bootstrap_state()
         super().tearDown()
 
     def auth_header_for(self, user):
@@ -282,6 +325,34 @@ class FlagsExtensionTests(TestCase):
         flag = PostFlag.objects.get(post=self.post, user=self.reporter)
         self.assertEqual(flag.message, "包含明显违规信息")
 
+    def test_report_post_uses_post_action_context_contract(self):
+        with patch(
+            "bias_core.extensions.runtime_posts.get_runtime_post_by_id",
+            side_effect=AssertionError("flags actions must use posts action context"),
+        ), CaptureQueriesContext(connection) as queries:
+            with self.captureOnCommitCallbacks() as callbacks:
+                flag = report_runtime_post_flag(
+                    self.post.id,
+                    self.reporter,
+                    reason="轻量上下文",
+                    message="不拉取完整帖子实体",
+                )
+
+        self.assertEqual(len(callbacks), 1)
+        self.assertEqual(flag.post_id, self.post.id)
+        self.assertLessEqual(len(queries), 8)
+
+    def test_report_missing_post_returns_not_found(self):
+        response = self.client.post(
+            "/api/posts/999999/report",
+            data='{"reason":"不存在","message":"应返回 404"}',
+            content_type="application/json",
+            **self.auth_header(),
+        )
+
+        self.assertEqual(response.status_code, 404, response.content)
+        self.assertEqual(response.json()["error"], "帖子不存在")
+
     def test_flag_resource_create_creates_flag_via_jsonapi(self):
         payload = {
             "data": {
@@ -301,8 +372,8 @@ class FlagsExtensionTests(TestCase):
             },
         }
 
-        mocked_bus = Mock()
-        with patch("bias_core.domain_events.get_forum_event_bus", return_value=mocked_bus):
+        events, dispatch_patch = capture_runtime_events()
+        with dispatch_patch:
             with self.captureOnCommitCallbacks(execute=True) as callbacks:
                 response = self.client.post(
                     "/api/resources/flag/create",
@@ -313,7 +384,7 @@ class FlagsExtensionTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(len(callbacks), 1)
-        event = mocked_bus.dispatch.call_args.args[0]
+        event = events[-1]
         self.assertIsInstance(event, PostFlagCreatedEvent)
         self.assertEqual(PostFlag.objects.count(), 1)
 
@@ -328,6 +399,40 @@ class FlagsExtensionTests(TestCase):
         self.assertEqual(data["attributes"]["reason_detail"], "JSON:API 举报")
         self.assertEqual(data["relationships"]["post"]["data"], {"type": "post", "id": str(self.post.id)})
         self.assertEqual(data["relationships"]["user"]["data"], {"type": "user_summary", "id": str(self.reporter.id)})
+
+    def test_flag_resource_create_uses_post_action_context_contract(self):
+        payload = {
+            "data": {
+                "type": "flag",
+                "attributes": {
+                    "reason": "JSON API contract",
+                },
+                "relationships": {
+                    "post": {
+                        "data": {
+                            "type": "post",
+                            "id": str(self.post.id),
+                        },
+                    },
+                },
+            },
+        }
+
+        with patch(
+            "bias_core.extensions.runtime_posts.get_runtime_post_by_id",
+            side_effect=AssertionError("flag resource relationship must use posts action context"),
+        ), CaptureQueriesContext(connection) as queries:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    "/api/resources/flag/create",
+                    data=payload,
+                    content_type="application/json",
+                    **self.auth_header(),
+                )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertTrue(PostFlag.objects.filter(post_id=self.post.id, user=self.reporter).exists())
+        self.assertLessEqual(len(queries), 45)
 
     def test_public_forum_settings_expose_flags_forum_resource_fields_for_staff(self):
         PostFlag.objects.create(
@@ -393,7 +498,6 @@ class FlagsExtensionTests(TestCase):
         self.assertEqual(reporter_response.json()["data"], [])
 
     def test_flag_visibility_uses_post_view_private_scoper(self):
-        from bias_core.extensions.application import ExtensionApplication
         from bias_core.extensions import ExtensionModelVisibilityDefinition
         from bias_ext_flags.backend.resources import scope_flag_visibility
 
@@ -439,7 +543,7 @@ class FlagsExtensionTests(TestCase):
             ExtensionModelVisibilityDefinition(
                 model=DiscussionModel,
                 ability="view",
-                scope=scope_discussion_view,
+                scope=allow_all_model_visibility,
             ),
         )
         app.models.register_visibility(
@@ -447,7 +551,7 @@ class FlagsExtensionTests(TestCase):
             ExtensionModelVisibilityDefinition(
                 model=PostModel,
                 ability="view",
-                scope=scope_post_view,
+                scope=scope_test_post_view,
             ),
         )
         app.models.register_visibility(
@@ -459,16 +563,21 @@ class FlagsExtensionTests(TestCase):
             ),
         )
 
-        with patch("bias_core.extensions.runtime_models.get_runtime_model_service", return_value=app.models):
-            visible_flag_ids = set(
-                scope_flag_visibility(
-                    PostFlag.objects.filter(id__in=[allowed_flag.id, denied_flag.id]),
-                    {"user": viewer},
-                ).values_list("id", flat=True)
+        with patch("bias_core.extensions.runtime_models.get_runtime_model_service", return_value=app.models), patch(
+            "bias_ext_flags.backend.resources.get_runtime_post_model",
+            create=True,
+            side_effect=AssertionError("flags visibility should use posts runtime visibility ids"),
+        ), CaptureQueriesContext(connection) as queries:
+            scoped_flags = scope_flag_visibility(
+                PostFlag.objects.filter(id__in=[allowed_flag.id, denied_flag.id]),
+                {"user": viewer},
             )
+            self.assertFalse(isinstance(scoped_flags.query.where.children[-1].rhs, list))
+            visible_flag_ids = set(scoped_flags.values_list("id", flat=True))
 
         self.assertIn(allowed_flag.id, visible_flag_ids)
         self.assertNotIn(denied_flag.id, visible_flag_ids)
+        self.assertLessEqual(len(queries), 4)
 
     def test_flags_extension_adds_flags_to_post_default_includes_for_staff(self):
         flag = PostFlag.objects.create(
@@ -521,8 +630,8 @@ class FlagsExtensionTests(TestCase):
             message="待删除",
         )
 
-        mocked_bus = Mock()
-        with patch("bias_core.domain_events.get_forum_event_bus", return_value=mocked_bus):
+        events, dispatch_patch = capture_runtime_events()
+        with dispatch_patch:
             with self.captureOnCommitCallbacks(execute=True) as callbacks:
                 response = self.client.delete(
                     f"/api/posts/{self.post.id}/flags",
@@ -532,7 +641,7 @@ class FlagsExtensionTests(TestCase):
         self.assertEqual(response.status_code, 204, response.content)
         self.assertEqual(len(callbacks), 1)
         self.assertFalse(PostFlag.objects.filter(post=self.post).exists())
-        event = mocked_bus.dispatch.call_args.args[0]
+        event = events[-1]
         self.assertIsInstance(event, PostFlagsDeletedEvent)
         self.assertEqual(set(event.flag_ids), {first.id, second.id})
         self.assertEqual(event.post_id, self.post.id)
@@ -557,14 +666,13 @@ class FlagsExtensionTests(TestCase):
             message="随帖子删除",
         )
 
-        mocked_bus = Mock()
-        with patch("bias_core.domain_events.get_forum_event_bus", return_value=mocked_bus):
+        dispatched_events, dispatch_patch = capture_runtime_events()
+        with dispatch_patch:
             with self.captureOnCommitCallbacks(execute=True):
                 deleted = delete_runtime_post(self.post.id, self.admin)
 
         self.assertTrue(deleted)
         self.assertFalse(PostFlag.objects.filter(post_id=self.post.id).exists())
-        dispatched_events = [call.args[0] for call in mocked_bus.dispatch.call_args_list]
         flags_deleted_event = next(
             event for event in dispatched_events if isinstance(event, PostFlagsDeletedEvent)
         )
@@ -619,6 +727,7 @@ class FlagsExtensionTests(TestCase):
             key="extensions.flags.can_flag_own",
             defaults={"value": "true"},
         )
+        clear_runtime_setting_caches()
 
         response = self.client.get(
             f"/api/posts/{self.post.id}",

@@ -6,11 +6,8 @@ from django.db.models import Max
 from bias_core.extensions import DatabaseResource, ResourceEndpoint, ResourceField, ResourceRelationship, ResourceSort
 from bias_core.extensions.platform import JsonApiForbidden, JsonApiValidationError
 from bias_ext_flags.backend.models import PostFlag
-from bias_core.extensions.runtime import (
-    get_runtime_post_by_id,
-    get_runtime_post_model,
-    report_runtime_post_flag,
-)
+from bias_core.extensions.runtime import report_runtime_post_flag
+from bias_ext_flags.backend.services import PostActionContextNotFound, require_post_action_context
 
 
 class FlagResource(DatabaseResource):
@@ -144,20 +141,12 @@ def _set_flag_post(instance, value, context):
         raise JsonApiValidationError("缺少举报帖子", pointer="/data/relationships/post")
     user = context.get("user")
     try:
-        post = get_runtime_post_by_id(
-            post_id,
-            user=user,
-            require_visible=True,
-            select_related=("discussion", "user"),
-        )
+        require_post_action_context(post_id, user=user, require_visible=True)
     except PermissionDenied:
         raise JsonApiForbidden("没有权限查看此帖子", pointer="/data/relationships/post")
-    except Exception as exc:
-        model = get_runtime_post_model()
-        if isinstance(exc, model.DoesNotExist):
-            raise JsonApiValidationError("帖子不存在", pointer="/data/relationships/post") from exc
-        raise
-    instance.post = post
+    except PostActionContextNotFound as exc:
+        raise JsonApiValidationError("帖子不存在", pointer="/data/relationships/post") from exc
+    instance.post_id = post_id
 
 
 def _relationship_identifier(value, *, expected_type: str) -> int | None:

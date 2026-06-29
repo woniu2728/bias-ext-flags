@@ -7,12 +7,11 @@ from bias_core.extensions.platform import api_error
 from bias_core.extensions.platform import log_admin_action
 from bias_core.extensions.runtime import (
     delete_runtime_post_flags,
-    get_runtime_post_by_id,
-    is_runtime_post_not_found,
+    get_runtime_post_action_context,
     report_runtime_post_flag,
     resolve_runtime_post_flags,
-    serialize_runtime_post,
 )
+from bias_ext_flags.backend.services import PostActionContextNotFound
 
 
 class PostReportSchema(BaseModel):
@@ -93,12 +92,10 @@ def dispatch_post_report(context):
         return serialize_flag(flag)
     except PermissionDenied as exc:
         return api_error(str(exc), status=403)
+    except PostActionContextNotFound:
+        return api_error("帖子不存在", status=404)
     except ValueError as exc:
         return api_error(str(exc), status=400)
-    except Exception as exc:
-        if not is_runtime_post_not_found(exc):
-            raise
-        return api_error("帖子不存在", status=404)
 
 
 def dispatch_post_resolve_flags(context):
@@ -123,23 +120,21 @@ def dispatch_post_resolve_flags(context):
                 "resolution_note": payload.resolution_note,
             },
         )
-        post = get_runtime_post_by_id(post_id, user=context["user"], require_visible=True)
-        if not post:
+        post_payload = _serialize_post_flag_state(post_id, context["user"])
+        if not post_payload:
             return api_error("帖子不存在", status=404)
 
         return {
             "message": "举报已处理",
             "resolved_count": resolved_count,
-            "post": serialize_runtime_post(post, context["user"]),
+            "post": post_payload,
         }
     except PermissionDenied as exc:
         return api_error(str(exc), status=403)
+    except PostActionContextNotFound:
+        return api_error("帖子不存在", status=404)
     except ValueError as exc:
         return api_error(str(exc), status=400)
-    except Exception as exc:
-        if not is_runtime_post_not_found(exc):
-            raise
-        return api_error("帖子不存在", status=404)
 
 
 def dispatch_post_delete_flags(context):
@@ -157,12 +152,10 @@ def dispatch_post_delete_flags(context):
         return 204, None
     except PermissionDenied as exc:
         return api_error(str(exc), status=403)
+    except PostActionContextNotFound:
+        return api_error("帖子不存在", status=404)
     except ValueError as exc:
         return api_error(str(exc), status=400)
-    except Exception as exc:
-        if not is_runtime_post_not_found(exc):
-            raise
-        return api_error("帖子不存在", status=404)
 
 
 def _post_payload(context) -> dict:
@@ -175,4 +168,42 @@ def _post_object_id(context) -> int:
         return int(context.get("object_id") or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _serialize_post_flag_state(post_id: int, user) -> dict | None:
+    from bias_ext_flags.backend.models import PostFlag
+    from bias_ext_flags.backend.resources import (
+        resolve_post_can_moderate_flags,
+        resolve_post_open_flag_count,
+        resolve_post_open_flags,
+    )
+
+    post_context = get_runtime_post_action_context(post_id, user=user, require_visible=True)
+    if post_context is None:
+        return None
+
+    class PostState:
+        pass
+
+    post = PostState()
+    post.id = int(post_context["id"])
+    post.discussion_id = int(post_context["discussion_id"])
+    post.user_id = post_context.get("user_id")
+    post.number = post_context.get("number")
+    post.hidden_at = post_context.get("hidden_at")
+    post.open_flags_cache = list(
+        PostFlag.objects.filter(
+            post_id=post.id,
+            status=PostFlag.STATUS_OPEN,
+        ).select_related("post", "post__discussion", "post__user", "user", "resolved_by")
+    )
+    context = {"user": user}
+    return {
+        "id": post.id,
+        "discussion_id": post.discussion_id,
+        "number": post.number,
+        "open_flag_count": resolve_post_open_flag_count(post, context),
+        "open_flags": resolve_post_open_flags(post, context),
+        "can_moderate_flags": resolve_post_can_moderate_flags(post, context),
+    }
 

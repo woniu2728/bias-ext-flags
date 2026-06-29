@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from django.db.models import Subquery
 from django.db.models import Prefetch
 
-from bias_core.extensions.runtime import get_runtime_post_model
-from bias_core.extensions.platform import apply_related_model_visibility_subquery
 from bias_ext_flags.backend.models import PostFlag
-from bias_core.extensions.runtime import has_runtime_forum_permission
+from bias_core.extensions.runtime import (
+    get_runtime_visible_post_ids,
+    has_runtime_forum_permission,
+)
 
 
 def post_flag_preload_resolver(context: dict):
@@ -170,11 +170,9 @@ def scope_flag_visibility(queryset, context: dict):
         or not has_runtime_forum_permission(user, "admin.flag.view")
     ):
         return queryset.none()
-    visible_post_ids = apply_related_model_visibility_subquery(
-        get_runtime_post_model(),
+    visible_post_ids = get_runtime_visible_post_ids(
         user=user,
-        ability="view",
         context={"skip_view_forum_gate": True},
     )
-    return queryset.filter(post_id__in=Subquery(visible_post_ids))
+    return queryset.filter(post_id__in=visible_post_ids)
 

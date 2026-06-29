@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from django.core.exceptions import PermissionDenied
@@ -11,23 +12,29 @@ from bias_core.extensions.runtime import (
 from bias_ext_flags.backend.events import PostFlagCreatedEvent, PostFlagsDeletedEvent, PostFlagsResolvedEvent
 from bias_ext_flags.backend.models import PostFlag
 from bias_core.extensions.runtime import (
-    can_runtime_view_post,
-    get_runtime_post_by_id,
-)
-from bias_core.extensions.runtime import (
     ensure_runtime_user_not_suspended,
+    get_runtime_post_action_context,
     has_runtime_forum_permission,
 )
 
 
+class PostActionContextNotFound(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class PostActionContext:
+    id: int
+    discussion_id: int
+    user_id: int | None
+    number: int | None
+    hidden_at: Any = None
+    discussion_title: str = ""
+
+
 def report_post(post_id: int, user: Any, reason: str, message: str = "") -> PostFlag:
     ensure_runtime_user_not_suspended(user, "举报帖子")
-    post = get_runtime_post_by_id(
-        post_id,
-        user=user,
-        require_visible=True,
-        select_related=("user", "discussion"),
-    )
+    post = require_post_action_context(post_id, user=user, require_visible=True)
 
     if not user or not user.is_authenticated:
         raise PermissionDenied("请先登录")
@@ -38,7 +45,7 @@ def report_post(post_id: int, user: Any, reason: str, message: str = "") -> Post
 
     try:
         existing = PostFlag.objects.get(
-            post=post,
+            post_id=post.id,
             user=user,
             status=PostFlag.STATUS_OPEN,
         )
@@ -48,7 +55,7 @@ def report_post(post_id: int, user: Any, reason: str, message: str = "") -> Post
         return existing
     except PostFlag.DoesNotExist:
         flag = PostFlag.objects.create(
-            post=post,
+            post_id=post.id,
             user=user,
             reason=reason,
             message=message,
@@ -116,7 +123,7 @@ def resolve_post_flags(post_id: int, admin_user: Any, status: str, resolution_no
     if status not in {PostFlag.STATUS_RESOLVED, PostFlag.STATUS_IGNORED}:
         raise ValueError("无效的处理状态")
 
-    open_flags = list(PostFlag.objects.filter(post_id=post_id, status=PostFlag.STATUS_OPEN))
+    open_flags = list(PostFlag.objects.select_related("post").filter(post_id=post_id, status=PostFlag.STATUS_OPEN))
     if not open_flags:
         raise ValueError("当前帖子没有待处理举报")
 
@@ -145,9 +152,7 @@ def resolve_post_flags(post_id: int, admin_user: Any, status: str, resolution_no
 
 
 def delete_post_flags(post_id: int, user: Any) -> int:
-    post = get_runtime_post_by_id(post_id, select_related=("discussion",))
-    if not can_runtime_view_post(post, user):
-        raise PermissionDenied("没有权限查看此帖子")
+    post = require_post_action_context(post_id, user=user, require_visible=True)
     if not has_runtime_forum_permission(user, "admin.flag.delete"):
         raise PermissionDenied("无权删除举报")
 
@@ -165,6 +170,20 @@ def delete_post_flags(post_id: int, user: Any) -> int:
             )
         )
         return len(flag_ids)
+
+
+def require_post_action_context(post_id: int, user: Any = None, *, require_visible: bool = True) -> PostActionContext:
+    context = get_runtime_post_action_context(post_id, user=user, require_visible=require_visible)
+    if context is None:
+        raise PostActionContextNotFound("帖子不存在")
+    return PostActionContext(
+        id=int(context["id"]),
+        discussion_id=int(context["discussion_id"]),
+        user_id=context.get("user_id"),
+        number=context.get("number"),
+        hidden_at=context.get("hidden_at"),
+        discussion_title=str(context.get("discussion_title") or ""),
+    )
 
 
 def _can_flag_own_post() -> bool:
