@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import PermissionDenied
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from bias_core.extensions.platform import api_error
 from bias_core.extensions.platform import log_admin_action
@@ -18,13 +18,15 @@ class PostReportSchema(BaseModel):
     reason: str = Field(..., min_length=1, max_length=100)
     message: str = Field("", max_length=1000)
 
-    @validator("reason")
+    @field_validator("reason")
+    @classmethod
     def validate_reason(cls, value):
         if not value.strip():
             raise ValueError("举报原因不能为空")
         return value.strip()
 
-    @validator("message")
+    @field_validator("message")
+    @classmethod
     def validate_message(cls, value):
         return (value or "").strip()
 
@@ -33,14 +35,16 @@ class PostFlagResolveSchema(BaseModel):
     status: str = Field(...)
     resolution_note: str = Field("", max_length=1000)
 
-    @validator("status")
+    @field_validator("status")
+    @classmethod
     def validate_status(cls, value):
         normalized = (value or "").strip()
         if normalized not in {"resolved", "ignored"}:
             raise ValueError("无效的处理状态")
         return normalized
 
-    @validator("resolution_note")
+    @field_validator("resolution_note")
+    @classmethod
     def validate_resolution_note(cls, value):
         return (value or "").strip()
 
