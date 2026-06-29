@@ -16,10 +16,6 @@ from ninja_jwt.tokens import RefreshToken
 
 from bias_core.extensions.platform import apply_model_visibility_scope
 from bias_ext_flags.backend.events import PostFlagCreatedEvent, PostFlagsDeletedEvent
-from bias_core.extensions.runtime import (
-    create_runtime_discussion,
-    get_runtime_discussion_model,
-)
 from bias_core.extensions.testing import (
     AuditLog,
     ExtensionApplication,
@@ -35,17 +31,48 @@ from bias_core.extensions.testing import (
     reset_extension_application_bootstrap_state,
 )
 from bias_ext_flags.backend.models import PostFlag
-from bias_core.extensions.runtime import (
-    create_runtime_post,
-    delete_runtime_post,
-    get_runtime_post_model,
-    report_runtime_post_flag,
-)
-from bias_core.extensions.runtime import (
-    get_runtime_group_model,
-    get_runtime_permission_model,
-    get_runtime_user_model,
-)
+
+
+def _runtime_facade(name: str):
+    from importlib import import_module
+
+    return getattr(import_module("bias_core.extensions.runtime"), name)
+
+
+def create_runtime_discussion(*args, **kwargs):
+    return _runtime_facade("create_runtime_discussion")(*args, **kwargs)
+
+
+def get_runtime_discussion_model(*args, **kwargs):
+    return _runtime_facade("get_runtime_discussion_model")(*args, **kwargs)
+
+
+def create_runtime_post(*args, **kwargs):
+    return _runtime_facade("create_runtime_post")(*args, **kwargs)
+
+
+def delete_runtime_post(*args, **kwargs):
+    return _runtime_facade("delete_runtime_post")(*args, **kwargs)
+
+
+def get_runtime_post_model(*args, **kwargs):
+    return _runtime_facade("get_runtime_post_model")(*args, **kwargs)
+
+
+def report_runtime_post_flag(*args, **kwargs):
+    return _runtime_facade("report_runtime_post_flag")(*args, **kwargs)
+
+
+def get_runtime_group_model(*args, **kwargs):
+    return _runtime_facade("get_runtime_group_model")(*args, **kwargs)
+
+
+def get_runtime_permission_model(*args, **kwargs):
+    return _runtime_facade("get_runtime_permission_model")(*args, **kwargs)
+
+
+def get_runtime_user_model(*args, **kwargs):
+    return _runtime_facade("get_runtime_user_model")(*args, **kwargs)
 
 
 class RuntimeModelProxy:

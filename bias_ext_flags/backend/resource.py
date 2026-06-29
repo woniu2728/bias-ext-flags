@@ -6,8 +6,13 @@ from django.db.models import Max
 from bias_core.extensions import DatabaseResource, ResourceEndpoint, ResourceField, ResourceRelationship, ResourceSort
 from bias_core.extensions.platform import JsonApiForbidden, JsonApiValidationError
 from bias_ext_flags.backend.models import PostFlag
-from bias_core.extensions.runtime import report_runtime_post_flag
 from bias_ext_flags.backend.services import PostActionContextNotFound, require_post_action_context
+
+
+def report_runtime_post_flag(*args, **kwargs):
+    from bias_core.extensions.runtime import report_runtime_post_flag as runtime_report_post_flag
+
+    return runtime_report_post_flag(*args, **kwargs)
 
 
 class FlagResource(DatabaseResource):

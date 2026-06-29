@@ -6,15 +6,28 @@ from bias_core.extensions.platform import api_error
 from bias_core.extensions.platform import AccessTokenAuth
 from bias_core.extensions.platform import PaginationService
 from bias_core.extensions.platform import log_admin_action
-from bias_core.extensions.runtime import (
-    get_runtime_post_flag_model,
-    list_runtime_post_flags,
-    resolve_runtime_post_flag,
-)
 from bias_ext_flags.backend.handlers import serialize_flag
 
 
 router = Router()
+
+
+def get_runtime_post_flag_model(*args, **kwargs):
+    from bias_core.extensions.runtime import get_runtime_post_flag_model as runtime_get_post_flag_model
+
+    return runtime_get_post_flag_model(*args, **kwargs)
+
+
+def list_runtime_post_flags(*args, **kwargs):
+    from bias_core.extensions.runtime import list_runtime_post_flags as runtime_list_post_flags
+
+    return runtime_list_post_flags(*args, **kwargs)
+
+
+def resolve_runtime_post_flag(*args, **kwargs):
+    from bias_core.extensions.runtime import resolve_runtime_post_flag as runtime_resolve_post_flag
+
+    return runtime_resolve_post_flag(*args, **kwargs)
 
 
 def _require_admin_permission(request, permission_code: str, message: str):

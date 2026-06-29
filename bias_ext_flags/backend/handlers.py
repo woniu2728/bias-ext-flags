@@ -5,13 +5,31 @@ from pydantic import BaseModel, Field, field_validator
 
 from bias_core.extensions.platform import api_error
 from bias_core.extensions.platform import log_admin_action
-from bias_core.extensions.runtime import (
-    delete_runtime_post_flags,
-    get_runtime_post_action_context,
-    report_runtime_post_flag,
-    resolve_runtime_post_flags,
-)
 from bias_ext_flags.backend.services import PostActionContextNotFound
+
+
+def delete_runtime_post_flags(*args, **kwargs):
+    from bias_core.extensions.runtime import delete_runtime_post_flags as runtime_delete_post_flags
+
+    return runtime_delete_post_flags(*args, **kwargs)
+
+
+def get_runtime_post_action_context(*args, **kwargs):
+    from bias_core.extensions.runtime import get_runtime_post_action_context as runtime_get_post_action_context
+
+    return runtime_get_post_action_context(*args, **kwargs)
+
+
+def report_runtime_post_flag(*args, **kwargs):
+    from bias_core.extensions.runtime import report_runtime_post_flag as runtime_report_post_flag
+
+    return runtime_report_post_flag(*args, **kwargs)
+
+
+def resolve_runtime_post_flags(*args, **kwargs):
+    from bias_core.extensions.runtime import resolve_runtime_post_flags as runtime_resolve_post_flags
+
+    return runtime_resolve_post_flags(*args, **kwargs)
 
 
 class PostReportSchema(BaseModel):

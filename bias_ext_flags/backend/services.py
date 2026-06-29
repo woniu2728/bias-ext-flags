@@ -6,16 +6,32 @@ from django.db import transaction
 from django.utils import timezone
 
 from bias_core.extensions.platform import dispatch_forum_event_after_commit
-from bias_core.extensions.runtime import (
-    apply_runtime_model_visibility,
-)
 from bias_ext_flags.backend.events import PostFlagCreatedEvent, PostFlagsDeletedEvent, PostFlagsResolvedEvent
 from bias_ext_flags.backend.models import PostFlag
-from bias_core.extensions.runtime import (
-    ensure_runtime_user_not_suspended,
-    get_runtime_post_action_context,
-    has_runtime_forum_permission,
-)
+
+
+def apply_runtime_model_visibility(*args, **kwargs):
+    from bias_core.extensions.runtime import apply_runtime_model_visibility as runtime_apply_model_visibility
+
+    return runtime_apply_model_visibility(*args, **kwargs)
+
+
+def ensure_runtime_user_not_suspended(*args, **kwargs):
+    from bias_core.extensions.runtime import ensure_runtime_user_not_suspended as runtime_ensure_user_not_suspended
+
+    return runtime_ensure_user_not_suspended(*args, **kwargs)
+
+
+def get_runtime_post_action_context(*args, **kwargs):
+    from bias_core.extensions.runtime import get_runtime_post_action_context as runtime_get_post_action_context
+
+    return runtime_get_post_action_context(*args, **kwargs)
+
+
+def has_runtime_forum_permission(*args, **kwargs):
+    from bias_core.extensions.runtime import has_runtime_forum_permission as runtime_has_forum_permission
+
+    return runtime_has_forum_permission(*args, **kwargs)
 
 
 class PostActionContextNotFound(ValueError):

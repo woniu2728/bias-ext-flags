@@ -3,10 +3,18 @@ from __future__ import annotations
 from django.db.models import Prefetch
 
 from bias_ext_flags.backend.models import PostFlag
-from bias_core.extensions.runtime import (
-    get_runtime_visible_post_ids,
-    has_runtime_forum_permission,
-)
+
+
+def get_runtime_visible_post_ids(*args, **kwargs):
+    from bias_core.extensions.runtime import get_runtime_visible_post_ids as runtime_get_visible_post_ids
+
+    return runtime_get_visible_post_ids(*args, **kwargs)
+
+
+def has_runtime_forum_permission(*args, **kwargs):
+    from bias_core.extensions.runtime import has_runtime_forum_permission as runtime_has_forum_permission
+
+    return runtime_has_forum_permission(*args, **kwargs)
 
 
 def post_flag_preload_resolver(context: dict):
