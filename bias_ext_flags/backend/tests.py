@@ -89,6 +89,32 @@ Group = RuntimeModelProxy(get_runtime_group_model)
 Permission = RuntimeModelProxy(get_runtime_permission_model)
 
 
+def discussion_tags_payload(tag_ids):
+    return {
+        "data": {
+            "relationships": {
+                "tags": {
+                    "data": [
+                        {"type": "tag", "id": str(tag_id)}
+                        for tag_id in tag_ids
+                    ],
+                },
+            },
+        },
+    }
+
+
+def create_test_tag(slug="flags-test"):
+    from bias_ext_tags.backend.models import Tag
+
+    return Tag.objects.create(
+        name=f"Flags {slug}",
+        slug=slug,
+        position=1,
+        is_primary=True,
+    )
+
+
 def allow_all_model_visibility(queryset, context):
     return queryset
 
@@ -211,10 +237,12 @@ class FlagsExtensionTests(TestCase):
             password="password123",
             is_email_confirmed=True,
         )
+        self.tag = create_test_tag()
         self.discussion = create_runtime_discussion(
             title="Flag discussion",
             content="First post",
             user=self.author,
+            extension_payload=discussion_tags_payload([self.tag.id]),
         )
         self.post = create_runtime_post(
             discussion_id=self.discussion.id,
@@ -869,10 +897,12 @@ class AdminFlagManagementApiTests(TestCase):
             password="password123",
             is_email_confirmed=True,
         )
+        tag = create_test_tag("admin-flags-test")
         discussion = create_runtime_discussion(
             title="Flag target",
             content="First",
             user=self.author,
+            extension_payload=discussion_tags_payload([tag.id]),
         )
         post = create_runtime_post(
             discussion_id=discussion.id,
