@@ -21,6 +21,7 @@ from bias_core.extensions.testing import (
     ExtensionApplication,
     ExtensionRuntimeTestMixin,
     Setting,
+    assert_runtime_service_contracts,
     bootstrap_extension_host,
     bootstrap_enabled_extension_application,
     capture_runtime_events,
@@ -125,6 +126,7 @@ class FlagsExtensionDiagnosticsTests(ExtensionRuntimeTestMixin, TestCase):
         application = self.bootstrap_extensions("flags")
         service = application.get_service("flags.service")
 
+        assert_runtime_service_contracts(application, "flags", "flags.service")
         self.assertIn("flags.service", application.get_service_provider_keys(extension_id="flags"))
         self.assertIs(service["model"], PostFlag)
         self.assertEqual(service["status_open"], PostFlag.STATUS_OPEN)
