@@ -8,6 +8,7 @@ from bias_core.extensions import (
     ModelExtender,
     ModelVisibilityExtender,
     PostLifecycleExtender,
+    RuntimeServiceContractExtender,
     SettingsExtender,
     ServiceProviderExtender,
 )
@@ -101,6 +102,22 @@ def service_extenders():
         ServiceProviderExtender(
             key="flags.service",
             provider=flag_service_provider,
+        ),
+        RuntimeServiceContractExtender().service(
+            "flags.service",
+            required_values=(
+                "model",
+                "status_ignored",
+                "status_open",
+                "status_resolved",
+            ),
+            required_methods=(
+                "delete_post_flags",
+                "get_flag_list",
+                "report_post",
+                "resolve_flag",
+                "resolve_post_flags",
+            ),
         ),
         LifecycleExtender(),
     )
