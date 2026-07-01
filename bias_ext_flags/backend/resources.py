@@ -5,16 +5,28 @@ from django.db.models import Prefetch
 from bias_ext_flags.backend.models import PostFlag
 
 
-def get_runtime_visible_post_ids(*args, **kwargs):
-    from bias_core.extensions.runtime import get_runtime_visible_post_ids as runtime_get_visible_post_ids
+def get_runtime_service(service_key: str, default=None):
+    from bias_core.extensions.runtime import get_runtime_service as runtime_get_service
 
-    return runtime_get_visible_post_ids(*args, **kwargs)
+    return runtime_get_service(service_key, default)
 
 
-def has_runtime_forum_permission(*args, **kwargs):
-    from bias_core.extensions.runtime import has_runtime_forum_permission as runtime_has_forum_permission
+def _service_method(service, name: str):
+    if isinstance(service, dict):
+        method = service.get(name)
+    else:
+        method = getattr(service, name, None)
+    if not callable(method):
+        raise RuntimeError(f"Flags 扩展运行时服务缺少方法: {name}")
+    return method
 
-    return runtime_has_forum_permission(*args, **kwargs)
+
+def get_visible_post_ids(*args, **kwargs):
+    return _service_method(get_runtime_service("content.posts"), "get_visible_ids")(*args, **kwargs)
+
+
+def has_forum_permission(user, permission_names) -> bool:
+    return bool(_service_method(get_runtime_service("users.service"), "has_forum_permission")(user, permission_names))
 
 
 def post_flag_preload_resolver(context: dict):
@@ -53,7 +65,7 @@ def resolve_forum_can_view_flags(forum, context: dict) -> bool:
     return bool(
         user
         and user.is_authenticated
-        and has_runtime_forum_permission(user, "admin.flag.view")
+        and has_forum_permission(user, "admin.flag.view")
     )
 
 
@@ -158,7 +170,7 @@ def resolve_post_flag_identifiers(post, context: dict) -> list[dict]:
 
 def resolve_post_can_moderate_flags(post, context: dict) -> bool:
     user = context.get("user")
-    return bool(user and has_runtime_forum_permission(user, "admin.flag.view"))
+    return bool(user and has_forum_permission(user, "admin.flag.view"))
 
 
 def resolve_user_new_flag_count(user, context: dict) -> int:
@@ -167,7 +179,7 @@ def resolve_user_new_flag_count(user, context: dict) -> int:
         not actor
         or not actor.is_authenticated
         or actor.id != user.id
-        or not has_runtime_forum_permission(actor, "admin.flag.view")
+        or not has_forum_permission(actor, "admin.flag.view")
     ):
         return 0
     queryset = scope_flag_visibility(PostFlag.objects.filter(status=PostFlag.STATUS_OPEN), {"user": actor})
@@ -179,10 +191,10 @@ def scope_flag_visibility(queryset, context: dict):
     if (
         not user
         or not user.is_authenticated
-        or not has_runtime_forum_permission(user, "admin.flag.view")
+        or not has_forum_permission(user, "admin.flag.view")
     ):
         return queryset.none()
-    visible_post_ids = get_runtime_visible_post_ids(
+    visible_post_ids = get_visible_post_ids(
         user=user,
         context={"skip_view_forum_gate": True},
     )

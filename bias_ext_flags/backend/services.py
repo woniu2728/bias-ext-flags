@@ -16,22 +16,32 @@ def apply_runtime_model_visibility(*args, **kwargs):
     return runtime_apply_model_visibility(*args, **kwargs)
 
 
-def ensure_runtime_user_not_suspended(*args, **kwargs):
-    from bias_core.extensions.runtime import ensure_runtime_user_not_suspended as runtime_ensure_user_not_suspended
+def get_runtime_service(service_key: str, default=None):
+    from bias_core.extensions.runtime import get_runtime_service as runtime_get_service
 
-    return runtime_ensure_user_not_suspended(*args, **kwargs)
-
-
-def get_runtime_post_action_context(*args, **kwargs):
-    from bias_core.extensions.runtime import get_runtime_post_action_context as runtime_get_post_action_context
-
-    return runtime_get_post_action_context(*args, **kwargs)
+    return runtime_get_service(service_key, default)
 
 
-def has_runtime_forum_permission(*args, **kwargs):
-    from bias_core.extensions.runtime import has_runtime_forum_permission as runtime_has_forum_permission
+def _service_method(service, name: str):
+    if isinstance(service, dict):
+        method = service.get(name)
+    else:
+        method = getattr(service, name, None)
+    if not callable(method):
+        raise RuntimeError(f"Flags 扩展运行时服务缺少方法: {name}")
+    return method
 
-    return runtime_has_forum_permission(*args, **kwargs)
+
+def ensure_user_not_suspended(user, action_label: str = "") -> None:
+    _service_method(get_runtime_service("users.service"), "ensure_not_suspended")(user, action_label)
+
+
+def has_forum_permission(user, permission_names) -> bool:
+    return bool(_service_method(get_runtime_service("users.service"), "has_forum_permission")(user, permission_names))
+
+
+def get_post_action_context(*args, **kwargs):
+    return _service_method(get_runtime_service("content.posts"), "get_action_context")(*args, **kwargs)
 
 
 class PostActionContextNotFound(ValueError):
@@ -49,7 +59,7 @@ class PostActionContext:
 
 
 def report_post(post_id: int, user: Any, reason: str, message: str = "") -> PostFlag:
-    ensure_runtime_user_not_suspended(user, "举报帖子")
+    ensure_user_not_suspended(user, "举报帖子")
     post = require_post_action_context(post_id, user=user, require_visible=True)
 
     if not user or not user.is_authenticated:
@@ -169,7 +179,7 @@ def resolve_post_flags(post_id: int, admin_user: Any, status: str, resolution_no
 
 def delete_post_flags(post_id: int, user: Any) -> int:
     post = require_post_action_context(post_id, user=user, require_visible=True)
-    if not has_runtime_forum_permission(user, "admin.flag.delete"):
+    if not has_forum_permission(user, "admin.flag.delete"):
         raise PermissionDenied("无权删除举报")
 
     with transaction.atomic():
@@ -189,7 +199,7 @@ def delete_post_flags(post_id: int, user: Any) -> int:
 
 
 def require_post_action_context(post_id: int, user: Any = None, *, require_visible: bool = True) -> PostActionContext:
-    context = get_runtime_post_action_context(post_id, user=user, require_visible=require_visible)
+    context = get_post_action_context(post_id, user=user, require_visible=require_visible)
     if context is None:
         raise PostActionContextNotFound("帖子不存在")
     return PostActionContext(

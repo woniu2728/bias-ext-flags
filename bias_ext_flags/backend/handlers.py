@@ -14,10 +14,24 @@ def delete_runtime_post_flags(*args, **kwargs):
     return runtime_delete_post_flags(*args, **kwargs)
 
 
-def get_runtime_post_action_context(*args, **kwargs):
-    from bias_core.extensions.runtime import get_runtime_post_action_context as runtime_get_post_action_context
+def get_runtime_service(service_key: str, default=None):
+    from bias_core.extensions.runtime import get_runtime_service as runtime_get_service
 
-    return runtime_get_post_action_context(*args, **kwargs)
+    return runtime_get_service(service_key, default)
+
+
+def _service_method(service, name: str):
+    if isinstance(service, dict):
+        method = service.get(name)
+    else:
+        method = getattr(service, name, None)
+    if not callable(method):
+        raise RuntimeError(f"Flags 扩展运行时服务缺少方法: {name}")
+    return method
+
+
+def get_post_action_context(*args, **kwargs):
+    return _service_method(get_runtime_service("content.posts"), "get_action_context")(*args, **kwargs)
 
 
 def report_runtime_post_flag(*args, **kwargs):
@@ -200,7 +214,7 @@ def _serialize_post_flag_state(post_id: int, user) -> dict | None:
         resolve_post_open_flags,
     )
 
-    post_context = get_runtime_post_action_context(post_id, user=user, require_visible=True)
+    post_context = get_post_action_context(post_id, user=user, require_visible=True)
     if post_context is None:
         return None
 
